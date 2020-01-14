@@ -10,8 +10,10 @@
 
 @interface TKAboutWindowController ()
 
-@property (unsafe_unretained) IBOutlet NSTextView *textView;
 @property (weak) IBOutlet NSTextField *versionLabel;
+@property (weak) IBOutlet NSTextField *projectHomepageLabel;
+@property (weak) IBOutlet NSTextField *titleLabel;
+@property (weak) IBOutlet NSTextField *homePageTitleLabel;
 
 @end
 
@@ -19,6 +21,8 @@
 
 - (void)windowDidLoad {
     [super windowDidLoad];
+    self.titleLabel.stringValue = YMLanguage(@"微信小助手", @"WeChat Assistant");
+    self.homePageTitleLabel.stringValue = YMLanguage(@"项目主页:", @"Project Homepage:");
     self.window.backgroundColor = [NSColor whiteColor];
     NSDictionary *localInfo = [[TKWeChatPluginConfig sharedConfig] localInfoPlist];
     if (!localInfo) {
@@ -26,10 +30,10 @@
     }
     NSString *localBundle = localInfo[@"CFBundleShortVersionString"];
     self.versionLabel.stringValue = localBundle;
-    
-//    NSString *path = [[NSBundle bundleWithIdentifier:@"MustangYM.WeChatExtension"] pathForResource:@"about" ofType:@"rtfd"];
-//    [self.textView readRTFDFromFile:path];
-//    self.textView.selectable = YES;
+}
+
+- (IBAction)didClickHomepageURL:(NSButton *)sender {
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://github.com/MustangYM/WeChatExtension-ForMac"]];
 }
 
 @end

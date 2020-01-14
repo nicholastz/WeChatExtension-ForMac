@@ -8,15 +8,16 @@
 
 #import "TKWeChatPluginConfig.h"
 #import "TKRemoteControlModel.h"
-#import "TKAutoReplyModel.h"
+#import "YMAutoReplyModel.h"
 #import "TKIgnoreSessonModel.h"
 #import "WeChatPlugin.h"
-
+#import "YMIMContactsManager.h"
 static NSString * const kTKPreventRevokeEnableKey = @"kTKPreventRevokeEnableKey";
 static NSString * const kTKPreventSelfRevokeEnableKey = @"kTKPreventSelfRevokeEnableKey";
 static NSString * const kTKPreventAsyncRevokeKey = @"kTKPreventAsyncRevokeKey";
 static NSString * const KPreventAsyncRevokeSignal = @"KPreventAsyncRevokeSignal";
 static NSString * const KPreventAsyncRevokeChatRoom = @"KPreventAsyncRevokeChatRoom";
+static NSString * const KQuitMonitorChatRoom = @"KQuitMonitorChatRoom";
 static NSString * const kTKAutoReplyEnableKey = @"kTKAutoReplyEnableKey";
 static NSString * const kTKAutoAuthEnableKey = @"kTKAutoAuthEnableKey";
 static NSString * const kTKAutoLoginEnableKey = @"kTKAutoLoginEnableKey";
@@ -26,14 +27,14 @@ static NSString * const kTKAlfredEnableKey = @"kTKAlfredEnableKey";
 static NSString * const kTKCheckUpdateWechatEnableKey = @"kTKCheckUpdateWechatEnableKey";
 static NSString * const kTKSystemBrowserEnableKey = @"kTKSystemBrowserEnableKey";
 static NSString * const kTKWeChatResourcesPath = @"/Applications/WeChat.app/Contents/MacOS/WeChatExtension.framework/Resources/";
-static NSString * const kTKWeChatRemotePlistPath = @"https://raw.githubusercontent.com/MustangYM/WeChatExtension-ForMac/master/WeChatExtension/WeChatExtension/Info.plist";
+static NSString * const kTKWeChatRemotePlistPath = @"https://raw.githubusercontent.com/MustangYM/WeChatExtension-ForMac/master/WeChatExtension/WeChatExtension/Base.lproj/Info.plist";
 
 @interface TKWeChatPluginConfig ()
 
 @property (nonatomic, copy) NSString *remoteControlPlistFilePath;
 @property (nonatomic, copy) NSString *autoReplyPlistFilePath;
 @property (nonatomic, copy) NSString *ignoreSessionPlistFilePath;
-
+@property (nonatomic, copy) NSString *quitMemberPlistPath;
 @property (nonatomic, copy) NSDictionary *localInfoPlist;
 @property (nonatomic, copy) NSDictionary *romoteInfoPlist;
 
@@ -66,6 +67,7 @@ static NSString * const kTKWeChatRemotePlistPath = @"https://raw.githubuserconte
         _preventAsyncRevokeToPhone = [[NSUserDefaults standardUserDefaults] boolForKey:kTKPreventAsyncRevokeKey];
         _preventAsyncRevokeSignal = [[NSUserDefaults standardUserDefaults] boolForKey:KPreventAsyncRevokeSignal];
         _preventAsyncRevokeChatRoom = [[NSUserDefaults standardUserDefaults] boolForKey:KPreventAsyncRevokeChatRoom];
+        _quitMonitorEnable = [[NSUserDefaults standardUserDefaults] boolForKey:KQuitMonitorChatRoom];
     }
     return self;
 }
@@ -148,17 +150,39 @@ static NSString * const kTKWeChatRemotePlistPath = @"https://raw.githubuserconte
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
+- (void)setQuitMonitorEnable:(BOOL)quitMonitorEnable
+{
+    _quitMonitorEnable = quitMonitorEnable;
+    [[NSUserDefaults standardUserDefaults] setBool:_quitMonitorEnable forKey:KQuitMonitorChatRoom];
+       [[NSUserDefaults standardUserDefaults] synchronize];
+}
+
 #pragma mark - 自动回复
 - (NSArray *)autoReplyModels {
     if (!_autoReplyModels) {
-        _autoReplyModels = [self getModelsWithClass:[TKAutoReplyModel class] filePath:self.autoReplyPlistFilePath];
+        _autoReplyModels = [self getModelsWithClass:[YMAutoReplyModel class] filePath:self.autoReplyPlistFilePath];
     }
     return _autoReplyModels;
 }
 
+- (YMAIAutoModel *)AIReplyModel {
+    NSString *filePath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"AIAutoReply.data"];
+    return [NSKeyedUnarchiver unarchiveObjectWithFile:filePath];
+}
+
+- (void)saveAIAutoReplyModel:(YMAIAutoModel *)model
+{
+    if (!model) {
+        return;
+    }
+    NSString *temp = NSTemporaryDirectory();
+     NSString *filePath = [temp stringByAppendingPathComponent:@"AIAutoReply.data"];
+     [NSKeyedArchiver archiveRootObject:model toFile:filePath];
+}
+
 - (void)saveAutoReplyModels {
     NSMutableArray *needSaveModels = [NSMutableArray array];
-    [_autoReplyModels enumerateObjectsUsingBlock:^(TKAutoReplyModel *model, NSUInteger idx, BOOL * _Nonnull stop) {
+    [_autoReplyModels enumerateObjectsUsingBlock:^(YMAutoReplyModel *model, NSUInteger idx, BOOL * _Nonnull stop) {
         if (model.hasEmptyKeywordOrReplyContent) {
             model.enable = NO;
             model.enableGroupReply = NO;
@@ -220,7 +244,7 @@ static NSString * const kTKWeChatRemotePlistPath = @"https://raw.githubuserconte
 
 - (void)saveIgnoreSessionModels {
     NSMutableArray *needSaveArray = [NSMutableArray array];
-    [self.ignoreSessionModels enumerateObjectsUsingBlock:^(TKBaseModel *obj, NSUInteger idx, BOOL * _Nonnull stop) {
+    [self.ignoreSessionModels enumerateObjectsUsingBlock:^(YMBaseModel *obj, NSUInteger idx, BOOL * _Nonnull stop) {
         [needSaveArray addObject:obj.dictionary];
     }];
     
@@ -259,18 +283,47 @@ static NSString * const kTKWeChatRemotePlistPath = @"https://raw.githubuserconte
     return _remoteControlPlistFilePath;
 }
 
-- (NSString *)autoReplyPlistFilePath {
-    if (!_autoReplyPlistFilePath) {
-        _autoReplyPlistFilePath = [self getSandboxFilePathWithPlistName:@"TKAutoReplyModels.plist"];
-    }
-    return _autoReplyPlistFilePath;
-}
-
 - (NSString *)ignoreSessionPlistFilePath {
     if (!_ignoreSessionPlistFilePath) {
         _ignoreSessionPlistFilePath = [self getSandboxFilePathWithPlistName:@"TKIgnoreSessons.plist"];
     }
     return _ignoreSessionPlistFilePath;
+}
+
+- (NSString *)autoReplyPlistFilePath {
+    if (!_autoReplyPlistFilePath) {
+        _autoReplyPlistFilePath = [self getSandboxFilePathWithPlistName:@"YMAutoReplyModels.plist"];
+    }
+    return _autoReplyPlistFilePath;
+}
+
+- (NSString *)quitMemberPlistPath
+{
+    if (!_quitMemberPlistPath) {
+        _quitMemberPlistPath = [self getSandboxFilePathWithPlistName:@"quitMembersPlist.plist"];
+    }
+    return _quitMemberPlistPath;
+}
+
+#pragma mark -
+- (void)saveMonitorQuitMembers:(NSMutableArray *)members
+{
+    if (!members) {
+        return;
+    }
+    
+    NSMutableArray *needSaveArray = [NSMutableArray array];
+    [members enumerateObjectsUsingBlock:^(YMMonitorChildInfo *obj, NSUInteger idx, BOOL * _Nonnull stop) {
+        [needSaveArray addObject:obj.dictionary];
+    }];
+    
+    [needSaveArray writeToFile:self.quitMemberPlistPath atomically:YES];
+}
+
+- (NSMutableArray *)getMonitorQuitMembers
+{
+    NSMutableArray *arr = [self getMonitorQuitModelsWithClass:[YMMonitorChildInfo class] filePath:self.quitMemberPlistPath];
+    return arr;
 }
 
 #pragma mark - 获取本地 & github 上的小助手 info 信息
@@ -291,6 +344,19 @@ static NSString * const kTKWeChatRemotePlistPath = @"https://raw.githubuserconte
 }
 
 #pragma mark - common
+
+- (NSMutableArray *)getMonitorQuitModelsWithClass:(Class)class filePath:(NSString *)filePath {
+    NSArray *originModels = [NSArray arrayWithContentsOfFile:filePath];
+    NSMutableArray *newModels = [NSMutableArray array];
+    
+    __weak Class weakClass = class;
+    [originModels enumerateObjectsUsingBlock:^(NSDictionary *obj, NSUInteger idx, BOOL * _Nonnull stop) {
+        YMMonitorChildInfo *model = [[weakClass alloc] initWithDict:obj];
+        [newModels addObject:model];
+    }];
+    return newModels;
+}
+
 - (NSMutableArray *)getModelsWithClass:(Class)class filePath:(NSString *)filePath {
     NSArray *originModels = [NSArray arrayWithContentsOfFile:filePath];
     NSMutableArray *newModels = [NSMutableArray array];
@@ -328,5 +394,26 @@ static NSString * const kTKWeChatRemotePlistPath = @"https://raw.githubuserconte
     return resourcesFilePath;
 }
 
+
+-(PluginLanguageType)languageType
+{
+    NSArray *languages = [NSLocale preferredLanguages];
+    PluginLanguageType type = PluginLanguageTypeEN;;
+    if (languages.count > 0) {
+        NSString *language = languages.firstObject;
+        if ([language hasPrefix:@"zh"]) {
+            type = PluginLanguageTypeZH;
+        }
+    }
+    return type;
+}
+
+- (NSString *)languageSetting:(NSString *)chinese english:(NSString *)english
+{
+    if ([TKWeChatPluginConfig sharedConfig].languageType == PluginLanguageTypeZH) {
+        return chinese;
+    }
+    return english;
+}
 @end
 
